@@ -36,7 +36,7 @@ client.on("messageCreate", async (message) => {
   data[guildId][userId].messages += 1;
   saveData();
 
-  if (message.content === "st?me") {
+  if (message.content === "St?me") {
     const messages = data[guildId][userId].messages;
 
     const embed = new EmbedBuilder()
