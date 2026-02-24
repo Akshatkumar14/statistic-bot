@@ -1,0 +1,14 @@
+{
+  "name": "statistic-bot",
+  "version": "1.0.0",
+  "description": "Discord Stats Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "quick.db": "^9.0.6",
+    "better-sqlite3": "^8.4.0"
+  }
+}
