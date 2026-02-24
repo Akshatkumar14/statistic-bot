@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const { QuickDB } = require("quick.db");
-const db = new QuickDB();
+const fs = require('fs');
 
 const client = new Client({
   intents: [
@@ -10,6 +9,16 @@ const client = new Client({
     GatewayIntentBits.GuildMembers
   ]
 });
+
+let data = {};
+
+if (fs.existsSync('./data.json')) {
+  data = JSON.parse(fs.readFileSync('./data.json'));
+}
+
+function saveData() {
+  fs.writeFileSync('./data.json', JSON.stringify(data, null, 2));
+}
 
 client.on("ready", () => {
   console.log(`${client.user.tag} is online!`);
@@ -21,10 +30,14 @@ client.on("messageCreate", async (message) => {
   const guildId = message.guild.id;
   const userId = message.author.id;
 
-  await db.add(`messages_${guildId}_${userId}`, 1);
+  if (!data[guildId]) data[guildId] = {};
+  if (!data[guildId][userId]) data[guildId][userId] = { messages: 0 };
+
+  data[guildId][userId].messages += 1;
+  saveData();
 
   if (message.content === "st?me") {
-    const messages = await db.get(`messages_${guildId}_${userId}`) || 0;
+    const messages = data[guildId][userId].messages;
 
     const embed = new EmbedBuilder()
       .setTitle("📊 Your Stats")
