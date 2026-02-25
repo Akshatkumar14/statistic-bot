@@ -4,8 +4,8 @@ const {
   AttachmentBuilder
 } = require("discord.js");
 
+const fetch = require("node-fetch");
 const fs = require("fs");
-const Canvas = require("canvas");
 
 const client = new Client({
   intents: [
@@ -32,10 +32,6 @@ client.once("ready", () => {
   console.log(`${client.user.tag} is online!`);
 });
 
-/* ===============================
-   MESSAGE + XP + VOICE TRACK
-=============================== */
-
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
 
@@ -48,8 +44,7 @@ client.on("messageCreate", async (message) => {
       messages: 0,
       xp: 0,
       level: 0,
-      voice: 0,
-      theme: "blue"
+      voice: 0
     };
   }
 
@@ -65,87 +60,22 @@ client.on("messageCreate", async (message) => {
     const rank = sorted.findIndex(u => u[0] === user) + 1;
     const userData = data[guild][user];
 
-    const canvas = Canvas.createCanvas(900, 350);
-    const ctx = canvas.getContext("2d");
+    const avatar = message.author.displayAvatarURL({ extension: "png" });
 
-    /* ===============================
-       Animated Gradient Style Background
-    =============================== */
+    const url = `https://api.popcat.xyz/rank?avatar=${avatar}&username=${encodeURIComponent(message.author.username)}&level=${userData.level}&xp=${userData.xp}&rank=${rank}`;
 
-    const gradient = ctx.createLinearGradient(0, 0, 900, 350);
-    gradient.addColorStop(0, "#1e3c72");
-    gradient.addColorStop(1, "#2a5298");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const response = await fetch(url);
+    const buffer = await response.buffer();
 
-    /* Avatar */
-    const avatar = await Canvas.loadImage(
-      message.author.displayAvatarURL({ extension: "png" })
-    );
-    ctx.drawImage(avatar, 50, 80, 150, 150);
-
-    /* Username */
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "28px Sans";
-    ctx.fillText(message.author.username, 230, 90);
-
-    ctx.font = "20px Sans";
-    ctx.fillText(`Level: ${userData.level}`, 230, 130);
-    ctx.fillText(`Rank: #${rank}`, 230, 160);
-    ctx.fillText(`XP: ${userData.xp}`, 230, 190);
-    ctx.fillText(`Messages: ${userData.messages}`, 230, 220);
-    ctx.fillText(`Voice Minutes: ${userData.voice}`, 230, 250);
-
-    /* ===============================
-       XP BAR
-    =============================== */
-
-    const barWidth = 400;
-    const progress = (userData.xp % 100) / 100;
-
-    ctx.fillStyle = "#444";
-    ctx.fillRect(230, 270, barWidth, 18);
-
-    ctx.fillStyle = "#00ffcc";
-    ctx.fillRect(230, 270, barWidth * progress, 18);
-
-    /* ===============================
-       GRAPH (Bottom Left)
-    =============================== */
-
-    const graphX = 50;
-    const graphY = 280;
-    const graphWidth = 150;
-    const graphHeight = 50;
-
-    ctx.strokeStyle = "#ffffff";
-    ctx.strokeRect(graphX, graphY, graphWidth, graphHeight);
-
-    // Messages Line (Red)
-    ctx.beginPath();
-    ctx.strokeStyle = "red";
-    ctx.moveTo(graphX, graphY + graphHeight);
-    ctx.lineTo(graphX + graphWidth, graphY + graphHeight - (userData.messages % 50));
-    ctx.stroke();
-
-    // Voice Line (Green)
-    ctx.beginPath();
-    ctx.strokeStyle = "green";
-    ctx.moveTo(graphX, graphY + graphHeight);
-    ctx.lineTo(graphX + graphWidth, graphY + graphHeight - (userData.voice % 50));
-    ctx.stroke();
-
-    const attachment = new AttachmentBuilder(canvas.toBuffer(), {
-      name: "rank-card.png"
+    const attachment = new AttachmentBuilder(buffer, {
+      name: "rank.png"
     });
 
     message.reply({ files: [attachment] });
   }
 });
 
-/* ===============================
-   VOICE TRACKING
-=============================== */
+/* VOICE TRACKING */
 
 client.on("voiceStateUpdate", (oldState, newState) => {
   const user = newState.id;
@@ -157,8 +87,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
       messages: 0,
       xp: 0,
       level: 0,
-      voice: 0,
-      theme: "blue"
+      voice: 0
     };
   }
 
