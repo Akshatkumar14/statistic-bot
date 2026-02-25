@@ -1,4 +1,7 @@
-// === IMPORTS ===
+// =============================
+// FINAL PRO STATISTIC BOT
+// =============================
+
 const {
   Client,
   GatewayIntentBits,
@@ -8,7 +11,10 @@ const {
 const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const fs = require("fs");
 
-// === CLIENT ===
+// =============================
+// CLIENT
+// =============================
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -18,38 +24,59 @@ const client = new Client({
   ]
 });
 
-// === DATA ===
+// =============================
+// DATA SYSTEM
+// =============================
+
 let data = {};
 if (fs.existsSync("./data.json")) {
   data = JSON.parse(fs.readFileSync("./data.json"));
 }
+
 function save() {
   fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
 }
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 const voiceMap = new Map();
 
+// =============================
+// READY
+// =============================
+
 client.once("ready", () => {
   console.log(`${client.user.tag} is online!`);
 });
 
-// === MESSAGE TRACKING ===
+// =============================
+// MESSAGE TRACKING
+// =============================
+
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
 
   const guild = message.guild.id;
   const user = message.author.id;
   const date = today();
+  const channelId = message.channel.id;
 
   if (!data[guild]) data[guild] = {};
-  if (!data[guild][user]) data[guild][user] = { daily: {} };
+  if (!data[guild][user]) {
+    data[guild][user] = { daily: {}, channels: {} };
+  }
+
   if (!data[guild][user].daily[date])
     data[guild][user].daily[date] = { messages: 0, voice: 0 };
 
+  if (!data[guild][user].channels[channelId])
+    data[guild][user].channels[channelId] = 0;
+
   data[guild][user].daily[date].messages += 1;
+  data[guild][user].channels[channelId] += 1;
+
   save();
 
   if (message.content === "St?dashboard") {
@@ -57,14 +84,19 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// === VOICE TRACKING ===
+// =============================
+// VOICE TRACKING
+// =============================
+
 client.on("voiceStateUpdate", (oldState, newState) => {
   const user = newState.id;
   const guild = newState.guild.id;
   const date = today();
 
   if (!data[guild]) data[guild] = {};
-  if (!data[guild][user]) data[guild][user] = { daily: {} };
+  if (!data[guild][user])
+    data[guild][user] = { daily: {}, channels: {} };
+
   if (!data[guild][user].daily[date])
     data[guild][user].daily[date] = { messages: 0, voice: 0 };
 
@@ -78,93 +110,110 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 
     const minutes = Math.floor((Date.now() - joinTime) / 60000);
     data[guild][user].daily[date].voice += minutes;
+
     save();
     voiceMap.delete(user);
   }
 });
 
-// === DASHBOARD ===
+// =============================
+// DASHBOARD
+// =============================
+
 async function generateDashboard(message, guild, user) {
 
-  const canvas = createCanvas(1200, 650);
+  const canvas = createCanvas(1300, 750);
   const ctx = canvas.getContext("2d");
 
   // Background
-  ctx.fillStyle = "#17181c";
+  ctx.fillStyle = "#141518";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  // Card function
   function card(x, y, w, h) {
-    ctx.fillStyle = "#23252b";
+    ctx.fillStyle = "#1f2127";
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 20);
+    ctx.roundRect(x, y, w, h, 25);
     ctx.fill();
   }
 
-  // Panels
-  card(40, 40, 350, 180);
-  card(420, 40, 350, 180);
-  card(800, 40, 350, 180);
-  card(40, 260, 1110, 320);
+  // Layout
+  card(40, 40, 1220, 160);
+  card(40, 230, 600, 200);
+  card(660, 230, 600, 200);
+  card(40, 460, 1220, 250);
 
+  const userData = data[guild][user];
+
+  // Avatar
   const avatar = await loadImage(
     message.author.displayAvatarURL({ extension: "png" })
   );
-  ctx.drawImage(avatar, 60, 70, 100, 100);
+  ctx.drawImage(avatar, 70, 70, 100, 100);
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "30px Sans";
-  ctx.fillText(message.author.username, 180, 110);
+  ctx.font = "34px Sans";
+  ctx.fillText(message.author.username, 200, 120);
 
-  // === CALCULATIONS ===
-  const stats1 = getLastDays(data[guild][user].daily, 1);
-  const stats7 = getLastDays(data[guild][user].daily, 7);
-  const stats14 = getLastDays(data[guild][user].daily, 14);
+  // Dates
+  ctx.font = "20px Sans";
+  ctx.fillStyle = "#aaaaaa";
+  ctx.fillText(`Created: ${message.author.createdAt.toDateString()}`, 200, 160);
+  ctx.fillText(`Joined: ${message.member.joinedAt.toDateString()}`, 500, 160);
 
-  const total14 = sum(stats14.messages);
+  // Stats
+  const stats1 = getLastDays(userData.daily, 1);
+  const stats7 = getLastDays(userData.daily, 7);
+  const stats14 = getLastDays(userData.daily, 14);
 
   // Rank
-  const allUsers = Object.entries(data[guild]);
-  const sorted = allUsers.sort((a, b) =>
-    sum(Object.values(b[1].daily || {}).map(d => d.messages || 0)) -
-    sum(Object.values(a[1].daily || {}).map(d => d.messages || 0))
+  const sorted = Object.entries(data[guild]).sort((a, b) =>
+    totalMessages(b[1]) - totalMessages(a[1])
   );
   const rank = sorted.findIndex(u => u[0] === user) + 1;
 
-  ctx.font = "22px Sans";
   ctx.fillStyle = "#ff4d4d";
-  ctx.fillText(`1d: ${sum(stats1.messages)} msgs`, 440, 110);
-  ctx.fillText(`7d: ${sum(stats7.messages)} msgs`, 440, 150);
-  ctx.fillText(`14d: ${sum(stats14.messages)} msgs`, 440, 190);
+  ctx.font = "22px Sans";
+  ctx.fillText(`Messages`, 70, 260);
+  ctx.fillText(`1d: ${stats1.totalMsg}`, 70, 300);
+  ctx.fillText(`7d: ${stats7.totalMsg}`, 70, 330);
+  ctx.fillText(`14d: ${stats14.totalMsg}`, 70, 360);
 
   ctx.fillStyle = "#00cc66";
-  ctx.fillText(`1d: ${sum(stats1.voice)} mins`, 820, 110);
-  ctx.fillText(`7d: ${sum(stats7.voice)} mins`, 820, 150);
-  ctx.fillText(`14d: ${sum(stats14.voice)} mins`, 820, 190);
+  ctx.fillText(`Voice`, 690, 260);
+  ctx.fillText(`1d: ${stats1.totalVoice} mins`, 690, 300);
+  ctx.fillText(`7d: ${stats7.totalVoice} mins`, 690, 330);
+  ctx.fillText(`14d: ${stats14.totalVoice} mins`, 690, 360);
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(`Rank #${rank}`, 180, 150);
+  ctx.fillText(`Server Rank: #${rank}`, 950, 120);
 
-  // === GRAPH ===
-  drawGraph(ctx, stats14.messages, stats14.voice);
+  // Top Channel
+  const topChannel = getTopChannel(userData.channels);
+  ctx.fillText(`Top Channel: ${topChannel}`, 950, 160);
+
+  drawGraph(ctx, stats14.msgArray, stats14.voiceArray);
 
   const attachment = new AttachmentBuilder(canvas.toBuffer("image/png"), {
-    name: "dashboard.png"
+    name: "pro-dashboard.png"
   });
 
   message.reply({ files: [attachment] });
 }
 
-// === GRAPH WITH GRID + GLOW ===
+// =============================
+// GRAPH
+// =============================
+
 function drawGraph(ctx, messages, voice) {
-
   const startX = 80;
-  const startY = 540;
-  const width = 1040;
-  const height = 250;
-
+  const startY = 680;
+  const width = 1140;
+  const height = 180;
   const max = Math.max(...messages, ...voice, 10);
 
-  // Grid
+  ctx.lineWidth = 3;
+
   ctx.strokeStyle = "#333";
   for (let i = 0; i <= 5; i++) {
     const y = startY - (i * height / 5);
@@ -174,28 +223,24 @@ function drawGraph(ctx, messages, voice) {
     ctx.stroke();
   }
 
-  // Glow effect
   ctx.shadowBlur = 15;
 
-  // Messages
   ctx.strokeStyle = "#ff4d4d";
   ctx.shadowColor = "#ff4d4d";
-  ctx.lineWidth = 3;
   ctx.beginPath();
   messages.forEach((val, i) => {
-    const x = startX + (i * (width / messages.length));
+    const x = startX + (i * width / messages.length);
     const y = startY - (val / max) * height;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
   ctx.stroke();
 
-  // Voice
   ctx.strokeStyle = "#00cc66";
   ctx.shadowColor = "#00cc66";
   ctx.beginPath();
   voice.forEach((val, i) => {
-    const x = startX + (i * (width / voice.length));
+    const x = startX + (i * width / voice.length);
     const y = startY - (val / max) * height;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
@@ -205,22 +250,37 @@ function drawGraph(ctx, messages, voice) {
   ctx.shadowBlur = 0;
 }
 
-// === HELPERS ===
+// =============================
+// HELPERS
+// =============================
+
 function getLastDays(daily, days) {
-  const messages = [];
-  const voice = [];
+  const msgArray = [];
+  const voiceArray = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
-    messages.push(daily[key]?.messages || 0);
-    voice.push(daily[key]?.voice || 0);
+    msgArray.push(daily[key]?.messages || 0);
+    voiceArray.push(daily[key]?.voice || 0);
   }
-  return { messages, voice };
+  return {
+    msgArray,
+    voiceArray,
+    totalMsg: msgArray.reduce((a, b) => a + b, 0),
+    totalVoice: voiceArray.reduce((a, b) => a + b, 0)
+  };
 }
 
-function sum(arr) {
-  return arr.reduce((a, b) => a + b, 0);
+function totalMessages(user) {
+  return Object.values(user.daily || {})
+    .reduce((sum, d) => sum + (d.messages || 0), 0);
+}
+
+function getTopChannel(channels = {}) {
+  const sorted = Object.entries(channels)
+    .sort((a, b) => b[1] - a[1]);
+  return sorted[0] ? `<#${sorted[0][0]}>` : "None";
 }
 
 client.login(process.env.TOKEN);
