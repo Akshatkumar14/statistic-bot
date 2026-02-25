@@ -7,7 +7,6 @@
   },
   "dependencies": {
     "discord.js": "^14.14.1",
-    "mongoose": "^7.6.1",
     "node-fetch": "^2.6.7"
   }
 }
