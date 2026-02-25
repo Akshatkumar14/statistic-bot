@@ -4,157 +4,117 @@ const {
   AttachmentBuilder
 } = require("discord.js");
 
-const mongoose = require("mongoose");
 const fetch = require("node-fetch");
+const fs = require("fs");
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
-/* ===============================
-   DATABASE
-=============================== */
+let data = {};
+if (fs.existsSync("./data.json")) {
+  data = JSON.parse(fs.readFileSync("./data.json"));
+}
 
-mongoose.connect(process.env.MONGO_URI);
-
-const userSchema = new mongoose.Schema({
-  guildId: String,
-  userId: String,
-  daily: Object
-});
-
-const User = mongoose.model("User", userSchema);
+function save() {
+  fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/* ===============================
-   READY
-=============================== */
+const voiceMap = new Map();
 
 client.once("ready", () => {
   console.log(`${client.user.tag} is online!`);
 });
 
-/* ===============================
-   MESSAGE TRACKING
-=============================== */
+/* MESSAGE TRACKING */
 
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
 
+  const guild = message.guild.id;
+  const user = message.author.id;
   const date = today();
 
-  let user = await User.findOne({
-    guildId: message.guild.id,
-    userId: message.author.id
-  });
+  if (!data[guild]) data[guild] = {};
+  if (!data[guild][user]) data[guild][user] = { daily: {} };
+  if (!data[guild][user].daily[date])
+    data[guild][user].daily[date] = { messages: 0, voice: 0 };
 
-  if (!user) {
-    user = new User({
-      guildId: message.guild.id,
-      userId: message.author.id,
-      daily: {}
-    });
-  }
-
-  if (!user.daily[date]) {
-    user.daily[date] = { messages: 0, voice: 0 };
-  }
-
-  user.daily[date].messages += 1;
-  await user.save();
+  data[guild][user].daily[date].messages += 1;
+  save();
 
   if (message.content === "St?dashboard") {
-    generateDashboard(message, user);
+    generateDashboard(message, guild, user);
   }
 });
 
-/* ===============================
-   VOICE TRACKING
-=============================== */
+/* VOICE TRACKING */
 
-const voiceMap = new Map();
-
-client.on("voiceStateUpdate", async (oldState, newState) => {
-  const userId = newState.id;
-  const guildId = newState.guild.id;
+client.on("voiceStateUpdate", (oldState, newState) => {
+  const user = newState.id;
+  const guild = newState.guild.id;
   const date = today();
 
+  if (!data[guild]) data[guild] = {};
+  if (!data[guild][user]) data[guild][user] = { daily: {} };
+  if (!data[guild][user].daily[date])
+    data[guild][user].daily[date] = { messages: 0, voice: 0 };
+
   if (!oldState.channel && newState.channel) {
-    voiceMap.set(userId, Date.now());
+    voiceMap.set(user, Date.now());
   }
 
   if (oldState.channel && !newState.channel) {
-    const joinTime = voiceMap.get(userId);
+    const joinTime = voiceMap.get(user);
     if (!joinTime) return;
 
     const minutes = Math.floor((Date.now() - joinTime) / 60000);
-
-    let user = await User.findOne({ guildId, userId });
-    if (!user) return;
-
-    if (!user.daily[date]) {
-      user.daily[date] = { messages: 0, voice: 0 };
-    }
-
-    user.daily[date].voice += minutes;
-    await user.save();
-
-    voiceMap.delete(userId);
+    data[guild][user].daily[date].voice += minutes;
+    save();
+    voiceMap.delete(user);
   }
 });
 
-/* ===============================
-   DASHBOARD IMAGE
-=============================== */
+/* DASHBOARD */
 
-async function generateDashboard(message, user) {
+async function generateDashboard(message, guild, user) {
 
-  const avatar = message.author.displayAvatarURL({ extension: "png" });
-
-  const last7 = getLastDays(user.daily, 7);
-  const last14 = getLastDays(user.daily, 14);
-
-  const totalMessages = last14.messages;
-  const totalVoice = last14.voice;
+  const last14 = getLastDays(data[guild][user].daily, 14);
 
   const graphUrl = `https://quickchart.io/chart?c={
     type:'line',
     data:{
       labels:${JSON.stringify(last14.labels)},
       datasets:[
-        {label:'Messages',data:${JSON.stringify(last14.messageArray)},borderColor:'red'},
-        {label:'Voice',data:${JSON.stringify(last14.voiceArray)},borderColor:'green'}
+        {label:'Messages',data:${JSON.stringify(last14.messages)},borderColor:'red'},
+        {label:'Voice',data:${JSON.stringify(last14.voice)},borderColor:'green'}
       ]
     }
   }`;
 
-  const imageApi = `https://api.popcat.xyz/rank?avatar=${avatar}&username=${encodeURIComponent(message.author.username)}&level=${Math.floor(totalMessages/100)}&xp=${totalMessages}&rank=1`;
-
   const graphBuffer = await (await fetch(graphUrl)).buffer();
-  const rankBuffer = await (await fetch(imageApi)).buffer();
-
   const graphAttachment = new AttachmentBuilder(graphBuffer, { name: "graph.png" });
-  const rankAttachment = new AttachmentBuilder(rankBuffer, { name: "rank.png" });
 
   message.reply({
-    content: `📊 **Your 14-Day Dashboard**\nMessages: ${totalMessages}\nVoice: ${totalVoice} mins`,
-    files: [rankAttachment, graphAttachment]
+    content: `📊 14 Day Dashboard\nMessages: ${sum(last14.messages)}\nVoice: ${sum(last14.voice)} mins`,
+    files: [graphAttachment]
   });
 }
 
 function getLastDays(daily, days) {
   const labels = [];
-  const messageArray = [];
-  const voiceArray = [];
+  const messages = [];
+  const voice = [];
 
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
@@ -162,17 +122,15 @@ function getLastDays(daily, days) {
     const key = d.toISOString().slice(0, 10);
 
     labels.push(key.slice(5));
-    messageArray.push(daily[key]?.messages || 0);
-    voiceArray.push(daily[key]?.voice || 0);
+    messages.push(daily[key]?.messages || 0);
+    voice.push(daily[key]?.voice || 0);
   }
 
-  return {
-    labels,
-    messageArray,
-    voiceArray,
-    messages: messageArray.reduce((a, b) => a + b, 0),
-    voice: voiceArray.reduce((a, b) => a + b, 0)
-  };
+  return { labels, messages, voice };
+}
+
+function sum(arr) {
+  return arr.reduce((a, b) => a + b, 0);
 }
 
 client.login(process.env.TOKEN);
