@@ -125,9 +125,40 @@ async function generateDashboard(message, guild, user) {
   const canvas = createCanvas(1300, 750);
   const ctx = canvas.getContext("2d");
 
-  // Background
-  ctx.fillStyle = "#141518";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // ===== RED BLACK GRADIENT BACKGROUND =====
+
+const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+gradient.addColorStop(0, "#0f0f0f");     // deep black
+gradient.addColorStop(0.5, "#1a0000");   // dark red
+gradient.addColorStop(1, "#330000");     // red tone
+
+ctx.fillStyle = gradient;
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+// Radial glow effect (center highlight)
+const glow = ctx.createRadialGradient(
+  canvas.width / 2,
+  canvas.height / 2,
+  100,
+  canvas.width / 2,
+  canvas.height / 2,
+  700
+);
+
+glow.addColorStop(0, "rgba(255, 0, 0, 0.25)");
+glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+ctx.fillStyle = glow;
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+// Subtle red overlay lines for animated feel
+ctx.strokeStyle = "rgba(255,0,0,0.05)";
+for (let i = 0; i < canvas.height; i += 40) {
+  ctx.beginPath();
+  ctx.moveTo(0, i);
+  ctx.lineTo(canvas.width, i + 50);
+  ctx.stroke();
+}
 
   // Card function
   function card(x, y, w, h) {
