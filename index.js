@@ -1,3 +1,4 @@
+// === IMPORTS ===
 const {
   Client,
   GatewayIntentBits,
@@ -7,6 +8,7 @@ const {
 const { createCanvas, loadImage } = require("@napi-rs/canvas");
 const fs = require("fs");
 
+// === CLIENT ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -16,15 +18,14 @@ const client = new Client({
   ]
 });
 
+// === DATA ===
 let data = {};
 if (fs.existsSync("./data.json")) {
   data = JSON.parse(fs.readFileSync("./data.json"));
 }
-
 function save() {
   fs.writeFileSync("./data.json", JSON.stringify(data, null, 2));
 }
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -35,8 +36,7 @@ client.once("ready", () => {
   console.log(`${client.user.tag} is online!`);
 });
 
-/* MESSAGE TRACKING */
-
+// === MESSAGE TRACKING ===
 client.on("messageCreate", async (message) => {
   if (!message.guild || message.author.bot) return;
 
@@ -57,8 +57,7 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-/* VOICE TRACKING */
-
+// === VOICE TRACKING ===
 client.on("voiceStateUpdate", (oldState, newState) => {
   const user = newState.id;
   const guild = newState.guild.id;
@@ -84,54 +83,69 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 });
 
-/* DASHBOARD DESIGN */
-
+// === DASHBOARD ===
 async function generateDashboard(message, guild, user) {
 
-  const canvas = createCanvas(1100, 500);
+  const canvas = createCanvas(1200, 650);
   const ctx = canvas.getContext("2d");
 
   // Background
-  ctx.fillStyle = "#1e1f24";
+  ctx.fillStyle = "#17181c";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Card Function
   function card(x, y, w, h) {
-    ctx.fillStyle = "#2a2c33";
+    ctx.fillStyle = "#23252b";
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 15);
+    ctx.roundRect(x, y, w, h, 20);
     ctx.fill();
   }
 
   // Panels
-  card(40, 40, 320, 150);   // Profile
-  card(380, 40, 320, 150);  // Messages
-  card(720, 40, 320, 150);  // Voice
-  card(40, 220, 1000, 220); // Chart
+  card(40, 40, 350, 180);
+  card(420, 40, 350, 180);
+  card(800, 40, 350, 180);
+  card(40, 260, 1110, 320);
 
-  // Profile
   const avatar = await loadImage(
     message.author.displayAvatarURL({ extension: "png" })
   );
-
-  ctx.drawImage(avatar, 60, 70, 80, 80);
+  ctx.drawImage(avatar, 60, 70, 100, 100);
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "28px Sans";
-  ctx.fillText(message.author.username, 160, 100);
+  ctx.font = "30px Sans";
+  ctx.fillText(message.author.username, 180, 110);
 
-  // Stats
-  const last14 = getLastDays(data[guild][user].daily, 14);
+  // === CALCULATIONS ===
+  const stats1 = getLastDays(data[guild][user].daily, 1);
+  const stats7 = getLastDays(data[guild][user].daily, 7);
+  const stats14 = getLastDays(data[guild][user].daily, 14);
 
-  ctx.font = "20px Sans";
+  const total14 = sum(stats14.messages);
+
+  // Rank
+  const allUsers = Object.entries(data[guild]);
+  const sorted = allUsers.sort((a, b) =>
+    sum(Object.values(b[1].daily || {}).map(d => d.messages || 0)) -
+    sum(Object.values(a[1].daily || {}).map(d => d.messages || 0))
+  );
+  const rank = sorted.findIndex(u => u[0] === user) + 1;
+
+  ctx.font = "22px Sans";
   ctx.fillStyle = "#ff4d4d";
-  ctx.fillText(`Messages (14d): ${sum(last14.messages)}`, 400, 110);
+  ctx.fillText(`1d: ${sum(stats1.messages)} msgs`, 440, 110);
+  ctx.fillText(`7d: ${sum(stats7.messages)} msgs`, 440, 150);
+  ctx.fillText(`14d: ${sum(stats14.messages)} msgs`, 440, 190);
 
   ctx.fillStyle = "#00cc66";
-  ctx.fillText(`Voice (14d): ${sum(last14.voice)} mins`, 740, 110);
+  ctx.fillText(`1d: ${sum(stats1.voice)} mins`, 820, 110);
+  ctx.fillText(`7d: ${sum(stats7.voice)} mins`, 820, 150);
+  ctx.fillText(`14d: ${sum(stats14.voice)} mins`, 820, 190);
 
-  // Chart
-  drawGraph(ctx, last14.messages, last14.voice);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`Rank #${rank}`, 180, 150);
+
+  // === GRAPH ===
+  drawGraph(ctx, stats14.messages, stats14.voice);
 
   const attachment = new AttachmentBuilder(canvas.toBuffer("image/png"), {
     name: "dashboard.png"
@@ -140,21 +154,33 @@ async function generateDashboard(message, guild, user) {
   message.reply({ files: [attachment] });
 }
 
-/* GRAPH */
-
+// === GRAPH WITH GRID + GLOW ===
 function drawGraph(ctx, messages, voice) {
 
   const startX = 80;
-  const startY = 380;
-  const width = 920;
-  const height = 150;
+  const startY = 540;
+  const width = 1040;
+  const height = 250;
 
   const max = Math.max(...messages, ...voice, 10);
 
-  ctx.lineWidth = 3;
+  // Grid
+  ctx.strokeStyle = "#333";
+  for (let i = 0; i <= 5; i++) {
+    const y = startY - (i * height / 5);
+    ctx.beginPath();
+    ctx.moveTo(startX, y);
+    ctx.lineTo(startX + width, y);
+    ctx.stroke();
+  }
 
-  // Messages line
+  // Glow effect
+  ctx.shadowBlur = 15;
+
+  // Messages
   ctx.strokeStyle = "#ff4d4d";
+  ctx.shadowColor = "#ff4d4d";
+  ctx.lineWidth = 3;
   ctx.beginPath();
   messages.forEach((val, i) => {
     const x = startX + (i * (width / messages.length));
@@ -164,8 +190,9 @@ function drawGraph(ctx, messages, voice) {
   });
   ctx.stroke();
 
-  // Voice line
+  // Voice
   ctx.strokeStyle = "#00cc66";
+  ctx.shadowColor = "#00cc66";
   ctx.beginPath();
   voice.forEach((val, i) => {
     const x = startX + (i * (width / voice.length));
@@ -174,21 +201,21 @@ function drawGraph(ctx, messages, voice) {
     else ctx.lineTo(x, y);
   });
   ctx.stroke();
+
+  ctx.shadowBlur = 0;
 }
 
+// === HELPERS ===
 function getLastDays(daily, days) {
   const messages = [];
   const voice = [];
-
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
-
     messages.push(daily[key]?.messages || 0);
     voice.push(daily[key]?.voice || 0);
   }
-
   return { messages, voice };
 }
 
