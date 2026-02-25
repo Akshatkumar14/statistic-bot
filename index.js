@@ -162,10 +162,39 @@ for (let i = 0; i < canvas.height; i += 40) {
 
   // Card function
   function card(x, y, w, h) {
-    ctx.fillStyle = "#1f2127";
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 25);
-    ctx.fill();
+
+  // Glass base
+  ctx.save();
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 25);
+  ctx.closePath();
+
+  // Semi transparent dark layer
+  ctx.fillStyle = "rgba(20, 20, 20, 0.55)";
+  ctx.fill();
+
+  // Soft white glass border
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.stroke();
+
+  // Inner glow
+  ctx.shadowBlur = 25;
+  ctx.shadowColor = "rgba(255, 0, 0, 0.25)";
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  // Top highlight gradient
+  const highlight = ctx.createLinearGradient(x, y, x, y + h);
+  highlight.addColorStop(0, "rgba(255,255,255,0.08)");
+  highlight.addColorStop(1, "rgba(255,255,255,0.02)");
+
+  ctx.fillStyle = highlight;
+  ctx.fill();
+
+  ctx.restore();
   }
 
   // Layout
